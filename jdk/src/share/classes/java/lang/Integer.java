@@ -62,6 +62,9 @@ public final class Integer extends Number implements Comparable<Integer> {
      */
     @Native public static final int   MAX_VALUE = 0x7fffffff;
 
+	// Used to access compression related helper methods
+	private static final com.ibm.jit.JITHelpers helpers = com.ibm.jit.JITHelpers.getHelpers();
+
     /**
      * The {@code Class} instance representing the primitive type
      * {@code int}.
@@ -420,6 +423,49 @@ public final class Integer extends Number implements Comparable<Integer> {
     public static String toUnsignedString(int i) {
         return Long.toString(toUnsignedLong(i));
     }
+
+	/**
+	 * Places characters representing the integer i into the
+	 * character array buf. The characters are placed into
+	 * the buffer backwards starting with the least significant
+	 * digit at the specified index (exclusive), and working
+	 * backwards from there.
+	 *
+	 * Will fail if i == Integer.MIN_VALUE
+	 */
+	static void getBytes(int i, int index, char[] buf) {
+		int q, r;
+		int charPos = index;
+		char sign = 0;
+
+		if (i < 0) {
+			sign = '-';
+			i = -i;
+		}
+
+		// Generate two digits per iteration
+		while (i >= 65536) {
+			q = i / 100;
+		// really: r = i - (q * 100);
+			r = i - ((q << 6) + (q << 5) + (q << 2));
+			i = q;
+			helpers.putByteInArrayByIndex(buf, --charPos, (byte) DigitOnes[r]);
+			helpers.putByteInArrayByIndex(buf, --charPos, (byte) DigitTens[r]);
+		}
+
+		// Fall thru to fast mode for smaller numbers
+		// assert(i <= 65536, i);
+		for (;;) {
+			q = (i * 52429) >>> (16+3);
+			r = i - ((q << 3) + (q << 1));  // r = i-(q*10) ...
+			helpers.putByteInArrayByIndex(buf, --charPos, (byte) digits[r]);
+			i = q;
+			if (i == 0) break;
+		}
+		if (sign != 0) {
+			helpers.putByteInArrayByIndex(buf, --charPos, (byte) sign);
+		}
+	}
 
     /**
      * Places characters representing the integer i into the

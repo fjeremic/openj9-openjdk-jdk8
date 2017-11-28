@@ -64,6 +64,9 @@ public final class Long extends Number implements Comparable<Long> {
      */
     @Native public static final long MAX_VALUE = 0x7fffffffffffffffL;
 
+	// Used to access compression related helper methods
+	private static final com.ibm.jit.JITHelpers helpers = com.ibm.jit.JITHelpers.getHelpers();
+
     /**
      * The {@code Class} instance representing the primitive type
      * {@code long}.
@@ -416,6 +419,62 @@ public final class Long extends Number implements Comparable<Long> {
     public static String toUnsignedString(long i) {
         return toUnsignedString(i, 10);
     }
+
+	/**
+	 * Places characters representing the integer i into the
+	 * character array buf. The characters are placed into
+	 * the buffer backwards starting with the least significant
+	 * digit at the specified index (exclusive), and working
+	 * backwards from there.
+	 *
+	 * Will fail if i == Long.MIN_VALUE
+	 */
+	static void getBytes(long i, int index, char[] buf) {
+		long q;
+		int r;
+		int charPos = index;
+		char sign = 0;
+
+		if (i < 0) {
+			sign = '-';
+			i = -i;
+		}
+
+		// Get 2 digits/iteration using longs until quotient fits into an int
+		while (i > Integer.MAX_VALUE) {
+			q = i / 100;
+			// really: r = i - (q * 100);
+			r = (int)(i - ((q << 6) + (q << 5) + (q << 2)));
+			i = q;
+			helpers.putByteInArrayByIndex(buf, --charPos, (byte) Integer.DigitOnes[r]);
+			helpers.putByteInArrayByIndex(buf, --charPos, (byte) Integer.DigitTens[r]);
+		}
+
+		// Get 2 digits/iteration using ints
+		int q2;
+		int i2 = (int)i;
+		while (i2 >= 65536) {
+			q2 = i2 / 100;
+			// really: r = i2 - (q * 100);
+			r = i2 - ((q2 << 6) + (q2 << 5) + (q2 << 2));
+			i2 = q2;
+			helpers.putByteInArrayByIndex(buf, --charPos, (byte) Integer.DigitOnes[r]);
+			helpers.putByteInArrayByIndex(buf, --charPos, (byte) Integer.DigitTens[r]);
+		}
+
+		// Fall thru to fast mode for smaller numbers
+		// assert(i2 <= 65536, i2);
+		for (;;) {
+			q2 = (i2 * 52429) >>> (16+3);
+			r = i2 - ((q2 << 3) + (q2 << 1));  // r = i2-(q2*10) ...
+			helpers.putByteInArrayByIndex(buf, --charPos, (byte) Integer.digits[r]);
+			i2 = q2;
+			if (i2 == 0) break;
+		}
+		if (sign != 0) {
+			helpers.putByteInArrayByIndex(buf, --charPos, (byte) sign);
+		}
+	}
 
     /**
      * Places characters representing the integer i into the
